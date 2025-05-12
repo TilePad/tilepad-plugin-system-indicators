@@ -1,0 +1,45 @@
+{
+    "plugin": {
+        "id": "com.jacobtread.tilepad.system-indicators",
+        "name": "System Indicators",
+        "version": "0.0.1",
+        "authors": [
+            "Jacobtread"
+        ],
+        "description": "Example Rust single threaded plugin"
+    },
+    "category": {
+        "label": "System Indicators",
+        "icon": "images/obs.png"
+    },
+    "bin": {
+        "native": [
+            {
+                "os": "windows",
+                "arch": "x64",
+                "path": "bin/plugin-windows-x64.exe"
+            },
+            {
+                "os": "windows",
+                "arch": "x86",
+                "path": "bin/plugin-windows-x86.exe"
+            },
+            {
+                "os": "linux",
+                "arch": "x64",
+                "path": "bin/plugin-linux-x64"
+            },
+            {
+                "os": "linux",
+                "arch": "x86",
+                "path": "bin/plugin-linux-x86"
+            }
+        ]
+    },
+    "actions": {
+        "cpu_temp": {
+            "label": "CPU Temperature",
+            "description": "Show the current CPU temperature"
+        }
+    }
+}
