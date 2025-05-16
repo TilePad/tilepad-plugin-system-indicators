@@ -4,7 +4,6 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>CPU Temp Gauge</title>
     <style>
         * {
             box-sizing: border-box;
@@ -134,6 +133,10 @@
     tilepad.plugin.onMessage((data) => {
         switch (data.type) {
             case "CPU_TEMP": {
+                if (data.nonce !== nonce) {
+                    return;
+                }
+
                 animateTemp(data.value);
                 break;
             }
@@ -150,8 +153,27 @@
     window.addEventListener("resize", scaleLabel);
     scaleLabel();
 
-    setInterval(() => {
-        tilepad.plugin.send({ type: "GET_CPU_TEMP" })
+    // Pick a random nonce to ignore messages for other tiles
+    const nonce = Math.floor(Math.random() * 4294967295);
+
+    /**
+     * Runs a callback at as close as it can get to a fixed
+     * millisecond interval 
+     * 
+     * (Fixed as in not relative to the time it was first started)
+     */
+    function setFixedInterval(callback, intervalMs) {
+        const now = Date.now();
+        const delay = intervalMs - (now % intervalMs);
+
+        setTimeout(() => {
+            callback();
+            setInterval(callback, intervalMs);
+        }, delay);
+    }
+
+    setFixedInterval(() => {
+        tilepad.plugin.send({ type: "GET_CPU_TEMP", nonce });
     }, 1000);
 </script>
 

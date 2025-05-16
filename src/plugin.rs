@@ -21,14 +21,14 @@ pub struct IndicatorsPlugin {
 #[derive(Debug, Deserialize)]
 #[serde(tag = "type", rename_all = "SCREAMING_SNAKE_CASE")]
 enum DisplayMessageIn {
-    GetCpuTemp,
+    GetCpuTemp { nonce: u32 },
 }
 
 /// Message sent to the display
 #[derive(Debug, Serialize)]
 #[serde(tag = "type", rename_all = "SCREAMING_SNAKE_CASE")]
 enum DisplayMessageOut {
-    CpuTemp { value: f32 },
+    CpuTemp { value: f32, nonce: u32 },
 }
 
 impl Plugin for IndicatorsPlugin {
@@ -47,7 +47,7 @@ impl Plugin for IndicatorsPlugin {
         };
 
         match message {
-            DisplayMessageIn::GetCpuTemp => {
+            DisplayMessageIn::GetCpuTemp { nonce } => {
                 // Initialize the background task on first request
                 if self.cpu_task.is_none() {
                     let task = spawn_local(run_computer_monitor(self.cpu_value.clone()));
@@ -56,7 +56,7 @@ impl Plugin for IndicatorsPlugin {
 
                 // Get the current value and send it back to the display
                 let value = self.cpu_value.get();
-                _ = display.send(DisplayMessageOut::CpuTemp { value });
+                _ = display.send(DisplayMessageOut::CpuTemp { value, nonce });
             }
         }
     }
