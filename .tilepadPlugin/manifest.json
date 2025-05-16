@@ -41,6 +41,11 @@
             "label": "CPU Temperature",
             "description": "Show the current CPU temperature",
             "display": "displays/cpu_temp.display.html"
+        },
+        "gpu_temp": {
+            "label": "GPU Temperature",
+            "description": "Show the current GPU temperature",
+            "display": "displays/gpu_temp.display.html"
         }
     }
 }
