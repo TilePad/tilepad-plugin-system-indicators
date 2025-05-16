@@ -10,7 +10,7 @@
     },
     "category": {
         "label": "System Indicators",
-        "icon": "images/obs.png"
+        "icon": "images/monitor.svg"
     },
     "bin": {
         "native": [

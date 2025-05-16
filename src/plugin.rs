@@ -16,67 +16,11 @@ pub struct ExamplePlugin {
 
 impl ExamplePlugin {
     pub fn create() -> Self {
-        let (tx, mut rx) = mpsc::unbounded_channel();
-        spawn_local(async move {
-            let cpu_value = Rc::new(Mutex::new(0.0));
+        let (tx, rx) = mpsc::unbounded_channel();
 
-            spawn_local({
-                let cpu_value = cpu_value.clone();
-                async move {
-                    let client = LHMClient::connect().await.unwrap();
-
-                    client
-                        .set_options(ComputerOptions {
-                            cpu_enabled: true,
-                            gpu_enabled: true,
-                            memory_enabled: true,
-                            ..Default::default()
-                        })
-                        .await
-                        .unwrap();
-
-                    client.update_all().await.unwrap();
-
-                    let cpus = client
-                        .query_hardware(None, Some(HardwareType::Cpu))
-                        .await
-                        .unwrap();
-
-                    let cpu = cpus.first().unwrap();
-
-                    let sensors = client
-                        .query_sensors(Some(cpu.identifier.clone()), Some(SensorType::Temperature))
-                        .await
-                        .unwrap();
-
-                    let sensor = sensors
-                        .iter()
-                        .find(|sensor| sensor.name.eq("CPU Package"))
-                        .unwrap();
-
-                    loop {
-                        let value = client
-                            .get_sensor_value_by_idx(sensor.index, true)
-                            .await
-                            .unwrap()
-                            .unwrap();
-
-                        *cpu_value.lock() = value;
-
-                        sleep(Duration::from_secs(1)).await;
-                    }
-                }
-            });
-
-            while let Some(msg) = rx.recv().await {
-                match msg {
-                    ActorMessage::GetCpuTemp { tx } => {
-                        let value = *cpu_value.lock();
-                        tx.send(value);
-                    }
-                }
-            }
-        });
+        let cpu_value = Rc::new(Mutex::new(0.0));
+        spawn_local(run_computer_monitor(cpu_value.clone()));
+        spawn_local(run_actor_messages(cpu_value, rx));
 
         Self { tx }
     }
@@ -99,13 +43,9 @@ enum DisplayMessageOut {
 }
 
 impl Plugin for ExamplePlugin {
-    fn on_registered(&mut self, session: &PluginSessionHandle) {
-        let session = session.clone();
-    }
-
     fn on_display_message(
         &mut self,
-        session: &PluginSessionHandle,
+        _session: &PluginSessionHandle,
         display: tilepad_plugin_sdk::display::Display,
         message: serde_json::Value,
     ) {
@@ -122,6 +62,67 @@ impl Plugin for ExamplePlugin {
                     let value = rx.await.unwrap();
                     _ = display.send(DisplayMessageOut::CpuTemp { value });
                 });
+            }
+        }
+    }
+}
+
+/// Run the monitoring task that polls for the CPU temperature every second
+async fn run_computer_monitor(cpu_value: Rc<Mutex<f32>>) {
+    let client = LHMClient::connect().await.unwrap();
+
+    client
+        .set_options(ComputerOptions {
+            cpu_enabled: true,
+            gpu_enabled: true,
+            memory_enabled: true,
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+
+    client.update_all().await.unwrap();
+
+    let cpus = client
+        .query_hardware(None, Some(HardwareType::Cpu))
+        .await
+        .unwrap();
+
+    let cpu = cpus.first().unwrap();
+
+    let sensors = client
+        .query_sensors(Some(cpu.identifier.clone()), Some(SensorType::Temperature))
+        .await
+        .unwrap();
+
+    let sensor = sensors
+        .iter()
+        .find(|sensor| sensor.name.eq("Core Average"))
+        .unwrap();
+
+    loop {
+        let value = client
+            .get_sensor_value_by_idx(sensor.index, true)
+            .await
+            .unwrap()
+            .unwrap();
+
+        *cpu_value.lock() = value;
+
+        sleep(Duration::from_secs(1)).await;
+    }
+}
+
+/// Run the task that accepts messages and processes them
+async fn run_actor_messages(
+    cpu_value: Rc<Mutex<f32>>,
+    mut rx: mpsc::UnboundedReceiver<ActorMessage>,
+) {
+    while let Some(msg) = rx.recv().await {
+        match msg {
+            ActorMessage::GetCpuTemp { tx } => {
+                let value = *cpu_value.lock();
+                _ = tx.send(value);
             }
         }
     }
