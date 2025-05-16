@@ -9,7 +9,11 @@ async fn main() {
     setup_tracing();
 
     let local_set = LocalSet::new();
-    let plugin = ExamplePlugin::new();
 
-    local_set.run_until(start_plugin(plugin)).await;
+    local_set
+        .run_until(async move {
+            let plugin = ExamplePlugin::create();
+            start_plugin(plugin).await;
+        })
+        .await;
 }
