@@ -1,4 +1,4 @@
-use plugin::ExamplePlugin;
+use plugin::IndicatorsPlugin;
 use tilepad_plugin_sdk::{setup_tracing, start_plugin};
 use tokio::task::LocalSet;
 
@@ -9,11 +9,7 @@ async fn main() {
     setup_tracing();
 
     let local_set = LocalSet::new();
+    let plugin = IndicatorsPlugin::default();
 
-    local_set
-        .run_until(async move {
-            let plugin = ExamplePlugin::create();
-            start_plugin(plugin).await;
-        })
-        .await;
+    local_set.run_until(start_plugin(plugin)).await;
 }
