@@ -6,7 +6,7 @@ use std::{
     rc::Rc,
     time::Duration,
 };
-use tilepad_plugin_sdk::{plugin::Plugin, session::PluginSessionHandle, tracing};
+use tilepad_plugin_sdk::{Plugin, PluginSessionHandle, tracing};
 use tokio::{
     task::{JoinHandle, spawn_local},
     time::sleep,
@@ -54,7 +54,7 @@ impl Plugin for IndicatorsPlugin {
     fn on_display_message(
         &mut self,
         _session: &PluginSessionHandle,
-        display: tilepad_plugin_sdk::display::Display,
+        display: tilepad_plugin_sdk::Display,
         message: serde_json::Value,
     ) {
         let message: DisplayMessageIn = match serde_json::from_value(message) {
