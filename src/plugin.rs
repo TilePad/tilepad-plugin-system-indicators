@@ -247,9 +247,9 @@ async fn run_cpu_sensor(client: LHMClientHandle, cpu_value: Rc<Cell<f32>>) {
     }
 }
 
-/// Run a loop for the CPU sensor storing its current temperature value in `cpu_value`
+/// Run a loop for the GPU sensor storing its current temperature value in `gpu_value`
 async fn run_gpu_sensor(client: LHMClientHandle, gpu_value: Rc<Cell<f32>>) {
-    // Get the CPU sensor
+    // Get the GPU sensor
     let mut gpu_sensor = match get_gpu_sensor(&client).await {
         Ok(value) => value,
         Err(cause) => {
