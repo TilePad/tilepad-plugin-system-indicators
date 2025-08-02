@@ -2,7 +2,7 @@
     "plugin": {
         "id": "com.jacobtread.tilepad.system-indicators",
         "name": "System Indicators",
-        "version": "0.0.1",
+        "version": "0.0.2",
         "authors": [
             "Jacobtread"
         ],
