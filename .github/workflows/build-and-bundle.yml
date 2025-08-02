@@ -22,16 +22,16 @@ jobs:
         # Binary build targets
         include:
           # - target: x86_64-unknown-linux-gnu
-          #   outfile: tilepad-plugin-obs-studio
+          #   outfile: tilepad-plugin-system-indicators
           #   filename: plugin-linux-x64
           # - target: i686-unknown-linux-gnu
-          #   outfile: tilepad-plugin-obs-studio
+          #   outfile: tilepad-plugin-system-indicators
           #   filename: plugin-linux-x86
           - target: x86_64-pc-windows-gnu
-            outfile: tilepad-plugin-obs-studio.exe
+            outfile: tilepad-plugin-system-indicators.exe
             filename: plugin-windows-x64.exe
           - target: i686-pc-windows-gnu
-            outfile: tilepad-plugin-obs-studio.exe
+            outfile: tilepad-plugin-system-indicators.exe
             filename: plugin-windows-x86.exe
 
     steps:
