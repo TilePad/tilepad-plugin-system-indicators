@@ -1,13 +1,10 @@
 use anyhow::Context;
 use lhm_client::{ComputerOptions, HardwareType, LHMClient, LHMClientHandle, Sensor, SensorType};
 use serde::{Deserialize, Serialize};
-use std::{
-    cell::{Cell, RefCell},
-    rc::Rc,
-    time::Duration,
-};
+use std::{cell::Cell, rc::Rc, time::Duration};
 use tilepad_plugin_sdk::{Plugin, PluginSessionHandle, tracing};
 use tokio::{
+    sync::Mutex,
     task::{JoinHandle, spawn_local},
     time::sleep,
     try_join,
@@ -15,7 +12,7 @@ use tokio::{
 
 #[derive(Default)]
 pub struct IndicatorsPlugin {
-    client_handle: Rc<RefCell<Option<LHMClientHandle>>>,
+    client_handle: Rc<ManagedClient>,
 
     /// Current CPU temperature value
     cpu_value: Rc<Cell<f32>>,
@@ -45,12 +42,6 @@ enum DisplayMessageOut {
 }
 
 impl Plugin for IndicatorsPlugin {
-    fn on_registered(&mut self, _session: &PluginSessionHandle) {
-        // Spawn a task to initialize the computer client handle
-        let handle = self.client_handle.clone();
-        spawn_local(init_computer(handle));
-    }
-
     fn on_display_message(
         &mut self,
         _session: &PluginSessionHandle,
@@ -71,14 +62,8 @@ impl Plugin for IndicatorsPlugin {
 
                 // Initialize the background task on first request
                 if self.cpu_task.is_none() {
-                    let client_handle = self.client_handle.borrow();
-                    let client_handle = match client_handle.as_ref() {
-                        Some(value) => value,
-                        None => return,
-                    };
-
                     let task = spawn_local(run_cpu_sensor(
-                        client_handle.clone(),
+                        self.client_handle.clone(),
                         self.cpu_value.clone(),
                     ));
                     self.cpu_task = Some(task);
@@ -93,14 +78,8 @@ impl Plugin for IndicatorsPlugin {
 
                 // Initialize the background task on first request
                 if self.gpu_task.is_none() {
-                    let client_handle = self.client_handle.borrow();
-                    let client_handle = match client_handle.as_ref() {
-                        Some(value) => value,
-                        None => return,
-                    };
-
                     let task = spawn_local(run_gpu_sensor(
-                        client_handle.clone(),
+                        self.client_handle.clone(),
                         self.gpu_value.clone(),
                     ));
                     self.gpu_task = Some(task);
@@ -114,36 +93,56 @@ impl Plugin for IndicatorsPlugin {
     }
 }
 
-async fn init_computer(handle: Rc<RefCell<Option<LHMClientHandle>>>) {
-    let client = match LHMClient::connect().await {
-        Ok(value) => value,
-        Err(cause) => {
-            tracing::error!(?cause, "failed to connect to monitoring service");
-            return;
+#[derive(Default)]
+struct ManagedClient {
+    client: Mutex<Option<LHMClientHandle>>,
+}
+
+impl ManagedClient {
+    pub async fn acquire(&self) -> Option<LHMClientHandle> {
+        let client_lock = &mut *self.client.lock().await;
+
+        if let Some(client) = client_lock {
+            if client.is_closed() {
+                // Client is closed and unavailable
+                *client_lock = None;
+            } else {
+                // Client is available
+                return Some(client.clone());
+            }
         }
-    };
 
-    // Set the options for what we want to request
-    if let Err(cause) = client
-        .set_options(ComputerOptions {
-            cpu_enabled: true,
-            gpu_enabled: true,
-            memory_enabled: true,
-            ..Default::default()
-        })
-        .await
-    {
-        tracing::error!(?cause, "failed to set monitor service options");
-        return;
-    };
+        let client = match LHMClient::connect().await {
+            Ok(value) => value,
+            Err(cause) => {
+                tracing::error!(?cause, "failed to connect to monitoring service");
+                return None;
+            }
+        };
 
-    // Load the available hardware
-    if let Err(cause) = client.update_all().await {
-        tracing::error!(?cause, "failed to update monitor service");
-        return;
+        // Set the options for what we want to request
+        if let Err(cause) = client
+            .set_options(ComputerOptions {
+                cpu_enabled: true,
+                gpu_enabled: true,
+                memory_enabled: true,
+                ..Default::default()
+            })
+            .await
+        {
+            tracing::error!(?cause, "failed to set monitor service options");
+            return None;
+        };
+
+        // Load the available hardware
+        if let Err(cause) = client.update_all().await {
+            tracing::error!(?cause, "failed to update monitor service");
+            return None;
+        }
+
+        *client_lock = Some(client.clone());
+        Some(client)
     }
-
-    *handle.borrow_mut() = Some(client);
 }
 
 // Find a sensor for the current CPU
@@ -203,91 +202,131 @@ async fn get_gpu_sensor(client: &LHMClientHandle) -> anyhow::Result<Sensor> {
 }
 
 /// Run a loop for the CPU sensor storing its current temperature value in `cpu_value`
-async fn run_cpu_sensor(client: LHMClientHandle, cpu_value: Rc<Cell<f32>>) {
-    // Get the CPU sensor
-    let mut cpu_sensor = match get_cpu_sensor(&client).await {
-        Ok(value) => value,
-        Err(cause) => {
-            tracing::error!(?cause, "failed to obtain cpu sensor");
-            return;
-        }
-    };
+async fn run_cpu_sensor(client: Rc<ManagedClient>, cpu_value: Rc<Cell<f32>>) {
+    let mut retry_attempt = 0;
 
     loop {
-        // Get the current value of the CPUs sensor
-        let value = match client
-            .get_sensor_value_by_id(cpu_sensor.identifier.clone(), true)
-            .await
-        {
-            Ok(Some(value)) => value,
-            // CPU sensor was lost (Another client refreshed cache?)
-            Ok(None) => {
-                // Try and obtain the CPU sensor again
-                if let Ok(value) = get_cpu_sensor(&client).await {
-                    cpu_sensor = value;
-                    continue;
+        let client = match client.acquire().await {
+            Some(value) => value,
+            None => {
+                if retry_attempt > 3 {
+                    return;
                 }
 
-                // Some other factor is preventing us from gaining the CPU sensor
-                tracing::warn!("cpu temperature sensor no longer exists");
-                return;
+                retry_attempt += 1;
+                // Wait before retrying
+                sleep(Duration::from_secs(5)).await;
+                continue;
             }
+        };
 
+        retry_attempt = 0;
+
+        // Get the CPU sensor
+        let mut cpu_sensor = match get_cpu_sensor(&client).await {
+            Ok(value) => value,
             Err(cause) => {
-                tracing::error!(?cause, "failed to get current temperature value");
+                tracing::error!(?cause, "failed to obtain cpu sensor");
                 return;
             }
         };
 
-        // Update the current temperature value
-        cpu_value.set(value);
+        'client: loop {
+            // Get the current value of the CPUs sensor
+            let value = match client
+                .get_sensor_value_by_id(cpu_sensor.identifier.clone(), true)
+                .await
+            {
+                Ok(Some(value)) => value,
+                // CPU sensor was lost (Another client refreshed cache?)
+                Ok(None) => {
+                    // Try and obtain the CPU sensor again
+                    if let Ok(value) = get_cpu_sensor(&client).await {
+                        cpu_sensor = value;
+                        continue;
+                    }
 
-        // Wait till the next tick
-        sleep(Duration::from_secs(1)).await;
+                    // Some other factor is preventing us from gaining the CPU sensor
+                    tracing::warn!("cpu temperature sensor no longer exists");
+                    return;
+                }
+
+                Err(cause) => {
+                    tracing::error!(?cause, "failed to get current temperature value");
+                    break 'client;
+                }
+            };
+
+            // Update the current temperature value
+            cpu_value.set(value);
+
+            // Wait till the next tick
+            sleep(Duration::from_secs(1)).await;
+        }
     }
 }
 
 /// Run a loop for the GPU sensor storing its current temperature value in `gpu_value`
-async fn run_gpu_sensor(client: LHMClientHandle, gpu_value: Rc<Cell<f32>>) {
-    // Get the GPU sensor
-    let mut gpu_sensor = match get_gpu_sensor(&client).await {
-        Ok(value) => value,
-        Err(cause) => {
-            tracing::error!(?cause, "failed to obtain cpu sensor");
-            return;
-        }
-    };
+async fn run_gpu_sensor(client: Rc<ManagedClient>, gpu_value: Rc<Cell<f32>>) {
+    let mut retry_attempt = 0;
 
     loop {
-        // Get the current value of the CPUs sensor
-        let value = match client
-            .get_sensor_value_by_id(gpu_sensor.identifier.clone(), true)
-            .await
-        {
-            Ok(Some(value)) => value,
-            // CPU sensor was lost (Another client refreshed cache?)
-            Ok(None) => {
-                // Try and obtain the CPU sensor again
-                if let Ok(value) = get_gpu_sensor(&client).await {
-                    gpu_sensor = value;
-                    continue;
+        let client = match client.acquire().await {
+            Some(value) => value,
+            None => {
+                if retry_attempt > 3 {
+                    return;
                 }
 
-                // Some other factor is preventing us from gaining the CPU sensor
-                tracing::warn!("cpu temperature sensor no longer exists");
-                return;
+                retry_attempt += 1;
+                // Wait before retrying
+                sleep(Duration::from_secs(5)).await;
+                continue;
             }
+        };
 
+        retry_attempt = 0;
+
+        // Get the GPU sensor
+        let mut gpu_sensor = match get_gpu_sensor(&client).await {
+            Ok(value) => value,
             Err(cause) => {
-                tracing::error!(?cause, "failed to get current temperature value");
+                tracing::error!(?cause, "failed to obtain cpu sensor");
                 return;
             }
         };
 
-        // Update the current temperature value
-        gpu_value.set(value);
+        'client: loop {
+            // Get the current value of the CPUs sensor
+            let value = match client
+                .get_sensor_value_by_id(gpu_sensor.identifier.clone(), true)
+                .await
+            {
+                Ok(Some(value)) => value,
+                // CPU sensor was lost (Another client refreshed cache?)
+                Ok(None) => {
+                    // Try and obtain the CPU sensor again
+                    if let Ok(value) = get_gpu_sensor(&client).await {
+                        gpu_sensor = value;
+                        continue;
+                    }
 
-        // Wait till the next tick
-        sleep(Duration::from_secs(1)).await;
+                    // Some other factor is preventing us from gaining the CPU sensor
+                    tracing::warn!("cpu temperature sensor no longer exists");
+                    return;
+                }
+
+                Err(cause) => {
+                    tracing::error!(?cause, "failed to get current temperature value");
+                    break 'client;
+                }
+            };
+
+            // Update the current temperature value
+            gpu_value.set(value);
+
+            // Wait till the next tick
+            sleep(Duration::from_secs(1)).await;
+        }
     }
 }

@@ -397,9 +397,9 @@ checksum = "bbd2bcb4c963f2ddae06a2efc7e9f3591312473c50c6685e1f298068316e66fe"
 
 [[package]]
 name = "lhm-client"
-version = "0.2.0"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4e42d5dfb296559afbf6ef2f2c091ab7c4c876655f3eb1b112a04a86099ecd68"
+checksum = "5952a0c5520dd6dab25d2a4103344e22f563607e5fc2be6b05529f6e2536ab45"
 dependencies = [
  "futures-util",
  "interprocess",
@@ -409,6 +409,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tokio-util",
+ "windows-service",
 ]
 
 [[package]]
@@ -1210,6 +1211,17 @@ name = "winapi-x86_64-pc-windows-gnu"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "712e227841d057c1ee1cd2fb22fa7e5a5461ae8e48fa2ca79ec42cfc1931183f"
+
+[[package]]
+name = "windows-service"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "193cae8e647981c35bc947fdd57ba7928b1fa0d4a79305f6dd2dc55221ac35ac"
+dependencies = [
+ "bitflags",
+ "widestring",
+ "windows-sys 0.59.0",
+]
 
 [[package]]
 name = "windows-sys"
