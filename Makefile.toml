@@ -22,7 +22,7 @@ args = [
     "--plugin-id",
     "com.jacobtread.tilepad.system-indicators",
     "--connect-url",
-    "ws://localhost:59371/plugins/ws",
+    "ws://localhost:8532/plugins/ws",
 ]
 
 # Locally run the plugin in debug mode (Watching for changes)
@@ -32,7 +32,7 @@ command = "cargo"
 args = [
     "watch",
     "-x",
-    "run -- --plugin-id com.jacobtread.tilepad.system-indicators --connect-url ws://localhost:59371/plugins/ws",
+    "run -- --plugin-id com.jacobtread.tilepad.system-indicators --connect-url ws://localhost:8532/plugins/ws",
 ]
 
 
